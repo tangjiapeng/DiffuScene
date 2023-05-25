@@ -17,7 +17,7 @@ This is the repository that contains source code for the paper:
 </div>
 
 
-If you find NSDP useful for your work please cite:
+If you find DiffuScene useful for your work please cite:
 
 ```
 @inproceedings{
