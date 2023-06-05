@@ -1,0 +1,73 @@
+data:
+    dataset_type: "cached_threedfront"
+    encoding_type: "cached_diffusion_cosin_angle_wocm" #"cached_diffusion_wocm_no_prm"
+    dataset_directory: "/cluster/balrog/jtang/3d_front_processed/livingrooms"
+    annotation_file: "../config/livingroom_threed_front_splits.csv"
+    path_to_invalid_scene_ids: "../config/invalid_threed_front_rooms.txt"
+    path_to_invalid_bbox_jids: "../config/black_list.txt"
+    augmentations: ["fixed_rotations"]
+    filter_fn: "threed_front_livingroom"
+    #filter_fn: "no_filtering"
+    train_stats: "dataset_stats.txt"
+    room_layout_size: "64,64"
+    max_length: 21
+
+    # for object autoencoder
+    path_to_3d_front_dataset_directory: "/cluster/balrog/jtang/3D-FRONT/"
+    path_to_3d_future_dataset_directory: "/cluster/balrog/jtang/3D-FUTURE-model/"
+    path_to_model_info: "/cluster/balrog/jtang/3D-FUTURE-model/model_info.json"
+    without_lamps: false
+
+network:
+    type: "diffusion_scene_layout_ddpm"
+    # denoising network
+    net_type: "unet1d"
+
+    # concate squarewish layer
+    point_dim: 33 #29
+    latent_dim: 0
+    room_mask_condition: false # not use room_mask 
+    sample_num_points: 21 # max_length 
+
+    objectness_dim: 0
+    class_dim: 25  #24+1
+    angle_dim: 2 
+
+    # for object autoencoder
+    objfeat_dim: 32 #64
+    kl_weight: 0.001
+
+
+feature_extractor:
+    name: "resnet18"
+    feature_size: 64
+    freeze_bn: true
+    input_channels: 1
+
+training:
+    splits: ["train", "val", "test"]
+    epochs: 1010
+    steps_per_epoch: 500
+    batch_size: 16
+    save_frequency: 100
+    max_grad_norm: 10
+    # optimizer
+    optimizer: Adam
+    weight_decay: 0.0
+    # schedule
+    schedule: 'step'
+    lr: 0.0001
+    lr_step: 400
+    lr_decay: 0.1
+
+validation:
+    splits: ["train", "val", "test"] #["val"]
+    frequency: 10
+    batch_size: 16
+    gen_traj: false
+    num_step: 100
+    gen_gt: false
+
+logger:
+    type: "wandb"
+    project: "3D_FRONT_objautoencoder"

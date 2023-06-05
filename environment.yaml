@@ -1,0 +1,29 @@
+name: diffuscene
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  - cython=0.29.32
+  - numpy=1.21.3
+  - networkx=2.5.1
+  - pyrr=0.10.3
+  - pyyaml=5.3.1
+  - python=3.8
+  - cudatoolkit=11.3
+  - pytorch=1.13.0 
+  - torchvision=0.14.0 
+  - pillow=7.2.0
+  - scipy=1.8.1
+  - tqdm=4.64.1
+  - trimesh=3.12.7
+  - matplotlib=3.3.1
+  - wxpython=4.0.7
+  - pip:
+    - simple_3dviz==0.7.0
+    - pytorch-fast-transformers==0.4.0
+    - wandb==0.13.2
+    - open3d==0.15.2
+    - plyfile==1.21.3
+    - seaborn==0.12.2
+    - num2words
