@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Setup for scene_synthesis"""
+"""Setup for scene_diffusion"""
 from itertools import dropwhile
 from os import path
 from setuptools import find_packages, setup
@@ -21,6 +21,7 @@ def collect_metadata():
     meta = {}
     with open(path.join("scene_synthesis", "__init__.py")) as f:
         lines = iter(f)
+        print(lines)
         meta["description"] = collect_docstring(lines)
         for line in lines:
             if line.startswith("__"):
@@ -37,13 +38,13 @@ def get_extensions():
 def get_install_requirements():
     return [
         "numpy",
-        "torch",
-        "torchvision",
+        # "torch",
+        # "torchvision",
         "networkx",
         "trimesh",
         "matplotlib",
         "shapely",
-        "simple-3dviz",
+        #"simple-3dviz",
         "scipy"
     ]
 
@@ -52,17 +53,18 @@ def setup_package():
     with open("README.md") as f:
         long_description = f.read()
     meta = collect_metadata()
+    print('meta', meta)
     setup(
         name="scene-synthesis",
-        version=meta["version"],
-        description=meta["description"],
+        # version=meta["version"],
+        # description=meta["description"],
         long_description=long_description,
         long_description_content_type="text/markdown",
-        maintainer=meta["maintainer"],
-        maintainer_email=meta["email"],
-        url=meta["url"],
-        keywords=meta["keywords"],
-        license=meta["license"],
+        # maintainer=meta["maintainer"],
+        # maintainer_email=meta["email"],
+        # url=meta["url"],
+        # keywords=meta["keywords"],
+        # license=meta["license"],
         classifiers=[
             "Intended Audience :: Science/Research",
             "Intended Audience :: Developers",

@@ -87,6 +87,7 @@ def get_textured_objects_based_on_objfeats(bbox_params_t, objects_dataset, class
     if diffusion:
         start, end = 0, bbox_params_t.shape[1]
     else:
+        #for autoregressive model, we delete the 'start' and 'end'
         start, end = 1, bbox_params_t.shape[1]-1
 
     color_palette = np.array(sns.color_palette('hls', len(classes)-2))

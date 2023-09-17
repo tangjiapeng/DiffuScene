@@ -106,7 +106,15 @@ The proprossed datasets can also be downloaded from [here](https://drive.google.
 
 
 ## Training & Evaluate Diffuscene
-In the next step, we will release the training and evaluation code of diffuscene.
+To train diffuscene on 3D Front-bedrooms, you can run 
+```
+./run/train.sh
+```
+
+To generate the scene of unconditional diffusion model, you can run
+```
+./run/generate.sh
+```
 
 
 ## Relevant Research

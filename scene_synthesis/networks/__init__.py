@@ -7,9 +7,9 @@ except ImportError:
     pass
 
 from .feature_extractors import get_feature_extractor
-# from .diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM, \
-#     train_on_batch as train_on_batch_diffusion_scene_layout_ddpm, \
-#     validate_on_batch as validate_on_batch_diffusion_scene_layout_ddpm 
+from .diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM, \
+    train_on_batch as train_on_batch_diffusion_scene_layout_ddpm, \
+    validate_on_batch as validate_on_batch_diffusion_scene_layout_ddpm 
 
 
 def optimizer_factory(config, parameters):

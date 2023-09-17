@@ -1,4 +1,4 @@
-"""Generative model for realistic syntheric scenes."""
+# """Generative model for realistic syntheric scenes."""
 
 __maintainer__ = "Jiapeng Tang"
 __email__ = "jiapeng.tang@tum.de"

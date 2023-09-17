@@ -20,10 +20,15 @@ dependencies:
   - matplotlib=3.3.1
   - wxpython=4.0.7
   - pip:
-    - simple_3dviz==0.7.0
+    - simple_3dviz==0.4.0
     - pytorch-fast-transformers==0.4.0
-    - wandb==0.13.2
-    - open3d==0.15.2
-    - plyfile==1.21.3
-    - seaborn==0.12.2
     - num2words
+    - nltk
+    - einops_exts
+    - kornia==0.6.9
+    - rotary_embedding_torch
+    - transformers==4.25.1
+    - clip==0.2.0
+    - torchtext
+    - seaborn
+    - wandb

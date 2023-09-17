@@ -10,7 +10,7 @@ import sys
 import numpy as np
 from PIL import Image, ImageFilter
 from tqdm import tqdm
-from scripts.utils import get_colored_objects_in_scene
+#from scripts.utils import get_colored_objects_in_scene
 
 from utils import DirLock, ensure_parent_directory_exists, \
     floor_plan_renderable, floor_plan_from_scene, \
