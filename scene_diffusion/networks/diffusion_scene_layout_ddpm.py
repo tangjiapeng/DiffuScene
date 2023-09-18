@@ -7,7 +7,6 @@ from torch.nn.utils import clip_grad_norm_
 
 from .diffusion_ddpm import DiffusionPoint
 from .denoise_net import Unet1D
-#from .pvcnn import PVCNN2Prior
 from ..stats_logger import StatsLogger
 from transformers import BertTokenizer, BertModel
 import clip
@@ -151,18 +150,12 @@ class DiffusionSceneLayout_DDPM(Module):
 
         # get desired diffusion target
         if self.config["point_dim"] == self.bbox_dim+self.class_dim+self.objectness_dim+self.objfeat_dim:
-            #print('room_layout_target :', translations.shape, sizes.shape, angles.shape, class_labels.shape)
             if self.objectness_dim>0:
                 room_layout_target = torch.cat([translations, sizes, angles, class_labels, objectness], dim=-1).contiguous()   
             else:
                 room_layout_target = torch.cat([translations, sizes, angles, class_labels], dim=-1).contiguous() 
             if self.objfeat_dim > 0:
                 room_layout_target = torch.cat([room_layout_target, objfeats], dim=-1).contiguous() 
-
-        elif self.config["point_dim"] == self.bbox_dim:
-            #print('room_layout_target :', 'translations, sizes, angles')
-            room_layout_target = torch.cat([translations, sizes, angles], dim=-1).contiguous()  
-
         else:
             raise NotImplementedError
 
@@ -222,9 +215,7 @@ class DiffusionSceneLayout_DDPM(Module):
                 condition_cross = self.clip_model.encode_text(tokenized)
             else:
                 tokenized = self.tokenizer(sample_params["description"], return_tensors='pt',padding=True).to(device)
-                #print('tokenized:', tokenized.shape)
                 text_f = self.bertmodel(**tokenized).last_hidden_state
-                #print('after bert:', text_f.shape)
                 condition_cross = self.fc_text_f( text_f )
         else:
             condition_cross = None
@@ -237,15 +228,15 @@ class DiffusionSceneLayout_DDPM(Module):
             if condition_cross is not None:
                 condition_cross = condition_cross.repeat(num_repeat, 1, 1)
 
-        # Negative ELBO of P(X|z)
+        # denoise loss function
         loss, loss_dict = self.diffusion.get_loss_iter(room_layout_target, condition=condition, condition_cross=condition_cross)
 
         return loss, loss_dict
 
     def sample(self, room_mask, num_points, point_dim, batch_size=1, text=None, 
                partial_boxes=None, input_boxes=None, ret_traj=False, ddim=False, clip_denoised=False, freq=40, batch_seeds=None, 
-               sds=False, skip_unet=False, replica=None, iters=None, init_lr=None, step=None, rearrange=False, completion=False):
-        
+                ):
+        device = room_mask.device
         noise = torch.randn((batch_size, num_points, point_dim))#, device=room_mask.device)
 
         # get the latent feature of room_mask
@@ -254,9 +245,6 @@ class DiffusionSceneLayout_DDPM(Module):
             
         else:
             room_layout_f = None
-
-        device = room_mask.device
-        #device = torch.device("cuda:0")
 
         # process instance & class condition f
         if self.instance_condition:
@@ -313,8 +301,6 @@ class DiffusionSceneLayout_DDPM(Module):
         else:
             condition_cross = None
             
-
-
 
         print('unconditional / conditional generation sampling')
         # reverse sampling
