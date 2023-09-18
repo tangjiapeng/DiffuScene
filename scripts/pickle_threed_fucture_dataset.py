@@ -4,10 +4,10 @@ import sys
 
 import pickle
 
-from scene_synthesis.datasets import filter_function
-from scene_synthesis.datasets.threed_front import ThreedFront
-from scene_synthesis.datasets.threed_front_dataset import dataset_encoding_factory
-from scene_synthesis.datasets.threed_future_dataset import ThreedFutureDataset
+from scene_diffusion.datasets import filter_function
+from scene_diffusion.datasets.threed_front import ThreedFront
+from scene_diffusion.datasets.threed_front_dataset import dataset_encoding_factory
+from scene_diffusion.datasets.threed_future_dataset import ThreedFutureDataset
 
 
 def main(argv):

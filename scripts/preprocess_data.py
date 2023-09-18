@@ -17,12 +17,12 @@ from utils import DirLock, ensure_parent_directory_exists, \
     get_textured_objects_in_scene, scene_from_args, render, \
     get_colored_objects_in_scene
 
-from scene_synthesis.datasets import filter_function
-from scene_synthesis.datasets.threed_front import ThreedFront
-from scene_synthesis.datasets.threed_front_dataset import \
+from scene_diffusion.datasets import filter_function
+from scene_diffusion.datasets.threed_front import ThreedFront
+from scene_diffusion.datasets.threed_front_dataset import \
     dataset_encoding_factory
 import seaborn as sns
-from scene_synthesis.datasets.threed_future_dataset import ThreedFutureNormPCDataset
+from scene_diffusion.datasets.threed_future_dataset import ThreedFutureNormPCDataset
  
  
 def main(argv):

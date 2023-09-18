@@ -19,7 +19,7 @@ def collect_docstring(lines):
 
 def collect_metadata():
     meta = {}
-    with open(path.join("scene_synthesis", "__init__.py")) as f:
+    with open(path.join("scene_diffusion", "__init__.py")) as f:
         lines = iter(f)
         print(lines)
         meta["description"] = collect_docstring(lines)
@@ -38,13 +38,13 @@ def get_extensions():
 def get_install_requirements():
     return [
         "numpy",
-        # "torch",
-        # "torchvision",
+        "torch",
+        "torchvision",
         "networkx",
         "trimesh",
         "matplotlib",
         "shapely",
-        #"simple-3dviz",
+        "simple-3dviz",
         "scipy"
     ]
 
@@ -55,7 +55,7 @@ def setup_package():
     meta = collect_metadata()
     print('meta', meta)
     setup(
-        name="scene-synthesis",
+        name="scene-diffusion",
         # version=meta["version"],
         # description=meta["description"],
         long_description=long_description,
@@ -74,7 +74,7 @@ def setup_package():
             "Programming Language :: Python :: 3",
         ],
         packages=find_packages(exclude=["docs", "scripts"]),
-        install_requires=get_install_requirements(),
+        #install_requires=get_install_requirements(),
         ext_modules=get_extensions()
     )
 

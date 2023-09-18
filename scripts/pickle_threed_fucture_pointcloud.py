@@ -9,14 +9,14 @@ import sys
 
 import pickle
 
-from scene_synthesis.datasets import filter_function
-from scene_synthesis.datasets.threed_front import ThreedFront
-from scene_synthesis.datasets.threed_front_dataset import dataset_encoding_factory
-from scene_synthesis.datasets.threed_future_dataset import ThreedFutureDataset
+from scene_diffusion.datasets import filter_function
+from scene_diffusion.datasets.threed_front import ThreedFront
+from scene_diffusion.datasets.threed_front_dataset import dataset_encoding_factory
+from scene_diffusion.datasets.threed_future_dataset import ThreedFutureDataset
 import trimesh
 import numpy as np
 
-from scene_synthesis.datasets.utils_io import export_pointcloud
+from scene_diffusion.datasets.utils_io import export_pointcloud
 
 def main(argv):
     parser = argparse.ArgumentParser(

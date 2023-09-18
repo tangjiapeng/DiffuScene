@@ -17,7 +17,7 @@ from simple_3dviz.behaviours.misc import LightToCamera
 from simple_3dviz.behaviours.io import SaveFrames
 from simple_3dviz.utils import render as render_simple_3dviz
 
-from scene_synthesis.utils import get_textured_objects, get_textured_objects_based_on_objfeats
+from scene_diffusion.utils import get_textured_objects, get_textured_objects_based_on_objfeats
 import torch
 import open3d as o3d
 
