@@ -29,6 +29,7 @@ dependencies:
     - rotary_embedding_torch
     - transformers==4.25.1
     - clip==0.2.0
+    - pyvista==0.43.3
     - torchtext
     - seaborn
     - wandb

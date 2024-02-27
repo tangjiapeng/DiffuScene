@@ -154,7 +154,9 @@ def get_textured_objects_based_on_objfeats(bbox_params_t, objects_dataset, class
                 furniture.texture_image_path
             )
             tr_mesh.visual.vertex_colors = (tr_mesh.visual.to_color()).vertex_colors[:, 0:3]
-        tr_mesh.vertices *= furniture.scale
+        # tr_mesh.vertices *= furniture.scale
+        # use the calculated scale from query size and retrieved object size :
+        tr_mesh.vertices *= (query_size / raw_sizes)
         tr_mesh.vertices -= centroid
         tr_mesh.vertices[...] = tr_mesh.vertices.dot(R) + translation
         trimesh_meshes.append(tr_mesh)

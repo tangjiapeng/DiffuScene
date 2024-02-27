@@ -53,7 +53,7 @@ class DiffusionSceneLayout_DDPM(Module):
                 print('use text as condition, and pretrained bert model')
 
         else:
-            print('NOT use room mask as condition')
+            print('NOT use room and text as condition')
 
         # define the denoising network
         if config["net_type"] == "unet1d":
@@ -84,8 +84,6 @@ class DiffusionSceneLayout_DDPM(Module):
         self.instance_condition = config.get("instance_condition", False)
         self.sample_num_points = config.get("sample_num_points", 12)
         self.instance_emb_dim = config.get("instance_emb_dim", 64)
-        #self.class_condition = config.get("class_condition", False)
-        #self.class_emb_dim = config.get("class_emb_dim", 64)
         
         if self.learnable_embedding:
             if self.instance_condition:
@@ -95,7 +93,6 @@ class DiffusionSceneLayout_DDPM(Module):
                 )
             else:
                 self.instance_emb_dim = 0
-            #self.class_emb_dim = 0
     
         else:
             if self.instance_condition:
@@ -106,7 +103,6 @@ class DiffusionSceneLayout_DDPM(Module):
                 )
             else:
                 self.instance_emb_dim = 0
-            #self.class_emb_dim = 0
 
         # defind other kinds of condition: partial objects or scene arrangement (size, class, objectness, and objfeats)
         self.room_partial_condition = config.get("room_partial_condition", False)
@@ -156,6 +152,10 @@ class DiffusionSceneLayout_DDPM(Module):
                 room_layout_target = torch.cat([translations, sizes, angles, class_labels], dim=-1).contiguous() 
             if self.objfeat_dim > 0:
                 room_layout_target = torch.cat([room_layout_target, objfeats], dim=-1).contiguous() 
+
+        elif self.config["point_dim"] == self.bbox_dim:
+            room_layout_target = torch.cat([translations, sizes, angles], dim=-1).contiguous()  
+    
         else:
             raise NotImplementedError
 
@@ -220,14 +220,6 @@ class DiffusionSceneLayout_DDPM(Module):
         else:
             condition_cross = None
 
-        if room_layout_target.shape[0] == 1:
-            num_repeat = 32
-            room_layout_target = room_layout_target.repeat(num_repeat, 1, 1)
-            if condition is not None:
-                condition = condition.repeat(num_repeat, 1, 1)
-            if condition_cross is not None:
-                condition_cross = condition_cross.repeat(num_repeat, 1, 1)
-
         # denoise loss function
         loss, loss_dict = self.diffusion.get_loss_iter(room_layout_target, condition=condition, condition_cross=condition_cross)
 
@@ -269,17 +261,14 @@ class DiffusionSceneLayout_DDPM(Module):
         else:
             condition = None
 
-        # concat room_partial condition
+        # concat room_partial condition, use partial boxes as input for scene completion
         if self.room_partial_condition:
-            partial_valid   = torch.ones((batch_size, self.partial_num_points, 1)).float().to(device)
-            ###partial_invalid = torch.ones((batch_size, num_points - self.partial_num_points, 1)).float().to(device)
-            partial_invalid = torch.zeros((batch_size, num_points - self.partial_num_points, 1)).float().to(device)
-            partial_mask    = torch.cat([ partial_valid, partial_invalid ], dim=1).contiguous()
-            partial_input   = input_boxes * partial_mask
+            zeros_boxes = torch.zeros((batch_size, num_points-partial_boxes.shape[1], partial_boxes.shape[2])).float().to(device)
+            partial_input  =  torch.cat([partial_boxes, zeros_boxes], dim=1).contiguous()
             partial_condition_f = self.fc_partial_condition(partial_input)
             condition = torch.cat([condition, partial_condition_f], dim=-1).contiguous()
 
-        # concat  room_arrange condition
+        # concat  room_arrange condition, use input boxes as input for scene completion
         if self.room_arrange_condition:
             arrange_input  = torch.cat([ input_boxes[:, :, self.translation_dim:self.translation_dim+self.size_dim], input_boxes[:, :, self.bbox_dim:] ], dim=-1).contiguous()
             arrange_condition_f = self.fc_arrange_condition(arrange_input)
@@ -302,13 +291,22 @@ class DiffusionSceneLayout_DDPM(Module):
             condition_cross = None
             
 
-        print('unconditional / conditional generation sampling')
-        # reverse sampling
-        if ret_traj:
-            samples = self.diffusion.gen_sample_traj(noise.shape, room_mask.device, freq=freq, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
+        if input_boxes is not None:
+            print('scene arrangement sampling')
+            samples = self.diffusion.arrange_samples(noise.shape, room_mask.device, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised, input_boxes=input_boxes)
+
+        elif partial_boxes is not None:
+            print('scene completion sampling')
+            samples = self.diffusion.complete_samples(noise.shape, room_mask.device, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised, partial_boxes=partial_boxes)
+
         else:
-            samples = self.diffusion.gen_samples(noise.shape, room_mask.device, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
-        
+            print('unconditional / conditional generation sampling')
+            # reverse sampling
+            if ret_traj:
+                samples = self.diffusion.gen_sample_traj(noise.shape, room_mask.device, freq=freq, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
+            else:
+                samples = self.diffusion.gen_samples(noise.shape, room_mask.device, condition=condition, condition_cross=condition_cross, clip_denoised=clip_denoised)
+            
         return samples
 
     @torch.no_grad()

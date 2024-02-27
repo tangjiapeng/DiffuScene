@@ -8,8 +8,6 @@ import torch
 from PIL import Image
 from pyrr import Matrix44
 
-import trimesh
-
 from simple_3dviz import Mesh, Scene
 from simple_3dviz.renderables.textured_mesh import Material, TexturedMesh
 from simple_3dviz.utils import save_frame
@@ -18,8 +16,10 @@ from simple_3dviz.behaviours.io import SaveFrames
 from simple_3dviz.utils import render as render_simple_3dviz
 
 from scene_diffusion.utils import get_textured_objects, get_textured_objects_based_on_objfeats
+import trimesh
 import torch
 import open3d as o3d
+import pyvista as pv
 
 class DirLock(object):
     def __init__(self, dirpath):
@@ -554,3 +554,194 @@ def render_scene_from_bbox_params(
                 if not os.path.exists(path_to_scene):
                     os.mkdir(path_to_scene)
                 export_scene(path_to_scene, trimesh_meshes)
+                
+                
+## calcalte iou
+def axis_aligned_bbox_overlaps_3d(bboxes1,
+                                  bboxes2,
+                                  mode='iou',
+                                  is_aligned=False,
+                                  eps=1e-6):
+    """Calculate overlap between two set of axis aligned 3D bboxes. If
+        ``is_aligned`` is ``False``, then calculate the overlaps between each bbox
+        of bboxes1 and bboxes2, otherwise the overlaps between each aligned pair of
+        bboxes1 and bboxes2.
+        Args:
+            bboxes1 (Tensor): shape (B, m, 6) in <x1, y1, z1, x2, y2, z2>
+                format or empty.
+            bboxes2 (Tensor): shape (B, n, 6) in <x1, y1, z1, x2, y2, z2>
+                format or empty.
+                B indicates the batch dim, in shape (B1, B2, ..., Bn).
+                If ``is_aligned`` is ``True``, then m and n must be equal.
+            mode (str): "iou" (intersection over union) or "giou" (generalized
+                intersection over union).
+            is_aligned (bool, optional): If True, then m and n must be equal.
+                Defaults to False.
+            eps (float, optional): A value added to the denominator for numerical
+                stability. Defaults to 1e-6.
+        Returns:
+            Tensor: shape (m, n) if ``is_aligned`` is False else shape (m,)
+    """
+
+    assert mode in ['iou', 'giou'], f'Unsupported mode {mode}'
+    # Either the boxes are empty or the length of boxes's last dimension is 6
+    assert (bboxes1.size(-1) == 6 or bboxes1.size(0) == 0)
+    assert (bboxes2.size(-1) == 6 or bboxes2.size(0) == 0)
+
+    # Batch dim must be the same
+    # Batch dim: (B1, B2, ... Bn)
+    assert bboxes1.shape[:-2] == bboxes2.shape[:-2]
+    batch_shape = bboxes1.shape[:-2]
+
+    rows = bboxes1.size(-2)
+    cols = bboxes2.size(-2)
+    if is_aligned:
+        assert rows == cols
+
+    if rows * cols == 0:
+        if is_aligned:
+            return bboxes1.new(batch_shape + (rows, ))
+        else:
+            return bboxes1.new(batch_shape + (rows, cols))
+
+    area1 = (bboxes1[..., 3] -
+             bboxes1[..., 0]) * (bboxes1[..., 4] - bboxes1[..., 1]) * (
+                 bboxes1[..., 5] - bboxes1[..., 2])
+    area2 = (bboxes2[..., 3] -
+             bboxes2[..., 0]) * (bboxes2[..., 4] - bboxes2[..., 1]) * (
+                 bboxes2[..., 5] - bboxes2[..., 2])
+
+    if is_aligned:
+        lt = torch.max(bboxes1[..., :3], bboxes2[..., :3])  # [B, rows, 3]
+        rb = torch.min(bboxes1[..., 3:], bboxes2[..., 3:])  # [B, rows, 3]
+
+        wh = (rb - lt).clamp(min=0)  # [B, rows, 2]
+        overlap = wh[..., 0] * wh[..., 1] * wh[..., 2]
+
+        if mode in ['iou', 'giou']:
+            union = area1 + area2 - overlap
+        else:
+            union = area1
+        if mode == 'giou':
+            enclosed_lt = torch.min(bboxes1[..., :3], bboxes2[..., :3])
+            enclosed_rb = torch.max(bboxes1[..., 3:], bboxes2[..., 3:])
+    else:
+        lt = torch.max(bboxes1[..., :, None, :3],
+                       bboxes2[..., None, :, :3])  # [B, rows, cols, 3]
+        rb = torch.min(bboxes1[..., :, None, 3:],
+                       bboxes2[..., None, :, 3:])  # [B, rows, cols, 3]
+
+        wh = (rb - lt).clamp(min=0)  # [B, rows, cols, 3]
+        overlap = wh[..., 0] * wh[..., 1] * wh[..., 2]
+
+        if mode in ['iou', 'giou']:
+            union = area1[..., None] + area2[..., None, :] - overlap
+        if mode == 'giou':
+            enclosed_lt = torch.min(bboxes1[..., :, None, :3],
+                                    bboxes2[..., None, :, :3])
+            enclosed_rb = torch.max(bboxes1[..., :, None, 3:],
+                                    bboxes2[..., None, :, 3:])
+
+    eps = union.new_tensor([eps])
+    union = torch.max(union, eps)
+    ious = overlap / union
+    # make the diagonal line to zero
+    assert rows == cols
+    for i in range(rows):
+        overlap[:, i, i] = 0.0
+    overlap_sum = overlap.sum(dim=[1, 2]) / 2.0
+    area_sum = (area1.sum(dim=1) + area2.sum(dim=1)) / 2.0 - overlap_sum
+    overlap_ratio = overlap_sum / area_sum
+    if mode in ['iou']:
+        return ious, overlap_ratio
+    # calculate gious
+    enclose_wh = (enclosed_rb - enclosed_lt).clamp(min=0)
+    enclose_area = enclose_wh[..., 0] * enclose_wh[..., 1] * enclose_wh[..., 2]
+    enclose_area = torch.max(enclose_area, eps)
+    gious = ious - (enclose_area - union) / enclose_area
+    return gious
+
+def computer_intersection(trimeshes, judge_mesh_intersec=False):
+    box_list = []
+    for i in range(len(trimeshes)):
+        box = trimeshes[i].bounding_box.bounds.reshape(-1)
+        box_list.append(box)
+    
+    if len(box_list) >1:
+        box_array = np.stack(box_list, axis=0).astype(np.float32)
+    else:
+        return len(trimeshes), 1, 0, 0, 0
+    
+    box_tensor = torch.from_numpy(box_array[None, ])
+    box_iou, overlap_ratio = axis_aligned_bbox_overlaps_3d(box_tensor, box_tensor)
+    
+    box_iou = box_iou.squeeze(0).cpu().numpy()
+
+    iou_list = []
+    insec_list = []
+    for i in range(len(trimeshes)):
+        for j in range(i+1, len(trimeshes)):
+            if box_iou[i, j] > 0.0:
+                if judge_mesh_intersec:
+                    s1, s2 = pv.wrap(trimeshes[i]), pv.wrap(trimeshes[j])
+                    intersection, s1_split, s2_split = s1.intersection(s2)
+                    if intersection.n_verts >0 and intersection.n_faces >0:
+                        iou_list.append(box_iou[i, j])
+                        insec_list.append(1)
+                    else:
+                        iou_list.append(0)
+                        insec_list.append(0)
+                else:
+                    iou_list.append(box_iou[i, j])
+                    insec_list.append(1)
+            else:
+                iou_list.append(0)
+                insec_list.append(0)
+    # return num_of_objects, number of pairs, avg iou (iou sum / pairs), avg intersection numbers ( intersec sum/ pairs)
+    return len(trimeshes), len(iou_list), float(sum(iou_list))/len(iou_list), float(sum(insec_list))/len(iou_list), overlap_ratio.item()
+
+def judge_if_symmetry(box1, box2, size_diff=0.1, pos_diff=0.1):
+    center1, size1 = (box1[3:6] + box1[0:3])/2.0,  (box1[3:6] - box1[0:3])/2.0
+    center2, size2 = (box2[3:6] + box2[0:3])/2.0,  (box2[3:6] - box2[0:3])/2.0
+    
+    if np.abs(size1-size2).max() < size_diff:
+        if abs(center1[0]-center2[0]) < pos_diff or abs(center1[2]-center2[2]) < pos_diff:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def computer_symmetry(trimeshes, class_labels, model_jids=None):
+    num_symmetry = 0
+    box_list = []
+    num_verts_list = []
+    num_faces_list = []
+    for i in range(len(trimeshes)):
+        box = trimeshes[i].bounding_box.bounds.reshape(-1)
+        box_list.append(box)
+        num_verts_list.append(len(trimeshes[i].vertices))
+        num_faces_list.append(len(trimeshes[i].faces))
+
+
+    if len(box_list) <=1:
+        return 0
+    else:
+        for i in range(len(trimeshes)):
+            box1 = box_list[i]
+            class1 = class_labels[i].argmax(-1)
+            for j in range(i+1, len(trimeshes)):
+                box2 = box_list[j]
+                class2 = class_labels[j].argmax(-1)
+
+                if model_jids is not None:
+                    if class1 == class2 and model_jids[i] == model_jids[j]:
+                        if judge_if_symmetry(box1, box2):
+                            num_symmetry += 1
+                else:
+                    if class1 == class2 and num_verts_list[i] == num_verts_list[j] and num_faces_list[i] == num_faces_list[j]:
+                        if judge_if_symmetry(box1, box2):
+                            num_symmetry += 1
+                
+    return num_symmetry

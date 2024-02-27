@@ -11,7 +11,15 @@ from tqdm.auto import tqdm
 import json
 import torch.nn.functional as F
 from einops import rearrange, reduce
+from functools import partial
+from collections import namedtuple
 from .loss import axis_aligned_bbox_overlaps_3d
+
+
+ModelPrediction =  namedtuple('ModelPrediction', ['pred_noise', 'pred_x_start'])
+
+def identity(t, *args, **kwargs):
+    return t
 
 def norm(v, f):
     v = (v - v.min())/(v.max() - v.min()) - 0.5
@@ -183,6 +191,17 @@ class GaussianDiffusion:
         self.posterior_mean_coef1 = betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod)
         self.posterior_mean_coef2 = (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod)
 
+        # calculate loss weight
+        snr = alphas_cumprod / (1 - alphas_cumprod)
+
+        if model_mean_type == 'eps':
+            loss_weight = torch.ones_like(snr)
+        elif model_mean_type == 'x0':
+            loss_weight = snr
+        elif model_mean_type == 'v':
+            loss_weight = snr / (snr + 1)
+        self.loss_weight = loss_weight
+
     @staticmethod
     def _extract(a, t, x_shape):
         """
@@ -195,6 +214,54 @@ class GaussianDiffusion:
         assert out.shape == torch.Size([bs])
         return torch.reshape(out, [bs] + ((len(x_shape) - 1) * [1]))
 
+    def _predict_xstart_from_eps(self, x_t, t, eps):
+        assert x_t.shape == eps.shape
+        return (
+                self._extract(self.sqrt_recip_alphas_cumprod.to(x_t.device), t, x_t.shape) * x_t -
+                self._extract(self.sqrt_recipm1_alphas_cumprod.to(x_t.device), t, x_t.shape) * eps
+        )
+    
+    def _predict_eps_from_start(self, x_t, t, x0):
+        return (
+            (self._extract(self.sqrt_recip_alphas_cumprod.to(x_t.device), t, x_t.shape) * x_t - x0) / \
+            self._extract(self.sqrt_recipm1_alphas_cumprod.to(x_t.device), t, x_t.shape)
+        )
+        
+    def _predict_v(self, x0, t, eps):
+        return (
+            self._extract(self.sqrt_alphas_cumprod.to(x0.device), t, x0.shape) * eps -
+            self._extract(self.sqrt_one_minus_alphas_cumprod.to(x0.device), t, x0.shape) * x0
+        )
+
+    def _predict_start_from_v(self, x_t, t, v):
+        return (
+            self._extract(self.sqrt_alphas_cumprod.to(x_t.device), t, x_t.shape) * x_t -
+            self._extract(self.sqrt_one_minus_alphas_cumprod.to(x_t.device), t, x_t.shape) * v
+        )
+        
+    def model_predictions(self, denoise_fn, x_t, t, condition, condition_cross, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False): 
+        model_output = denoise_fn(x_t, t, condition, condition_cross) 
+        maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
+
+        if self.model_mean_type == 'eps':
+            pred_noise = model_output
+            x_start = self._predict_xstart_from_eps(x_t, t, pred_noise)
+            x_start = maybe_clip(x_start)
+            if clip_x_start and rederive_pred_noise:
+                pred_noise = self._predict_eps_from_start(x_t, t, x_start)
+
+        elif self.model_mean_type == 'x0': 
+            x_start = model_output
+            x_start = maybe_clip(x_start)
+            pred_noise = self._predict_eps_from_start(x_t, t, x_start)
+
+        elif self.model_mean_type == 'v':
+            v = model_output
+            x_start = self._predict_start_from_v(x_t, t, v)
+            x_start = maybe_clip(x_start)
+            pred_noise = self._predict_eps_from_start(x_t, t, x_start)
+
+        return ModelPrediction(pred_noise, x_start)
 
 
     def q_mean_variance(self, x_start, t):  
@@ -237,7 +304,11 @@ class GaussianDiffusion:
 
     def p_mean_variance(self, denoise_fn, data, t, condition, condition_cross, clip_denoised: bool, return_pred_xstart: bool):
 
-        model_output = denoise_fn(data, t, condition, condition_cross)
+        preds = self.model_predictions(denoise_fn, data, t, condition, condition_cross, x_self_cond=None)
+        x_recon = preds.pred_x_start
+
+        if clip_denoised:
+            x_recon.clamp_(-1., 1.)
 
 
         if self.model_var_type in ['fixedsmall', 'fixedlarge']:
@@ -253,25 +324,7 @@ class GaussianDiffusion:
         else:
             raise NotImplementedError(self.model_var_type)
 
-        if self.model_mean_type == 'eps':
-            x_recon = self._predict_xstart_from_eps(data, t=t, eps=model_output)
-
-            if clip_denoised:
-                x_recon = torch.clamp(x_recon, -1.0, 1.0) 
-
-            model_mean, _, _ = self.q_posterior_mean_variance(x_start=x_recon, x_t=data, t=t)
-        
-        elif self.model_mean_type == 'x0':
-            x_recon = model_output
-
-            if clip_denoised:
-                x_recon = torch.clamp(x_recon, -1.0, 1.0) 
-
-            eps = self._predict_eps_from_start(data, t=t, x0=x_recon)
-
-            model_mean, _, _ = self.q_posterior_mean_variance(x_start=x_recon, x_t=data, t=t)
-        else:
-            raise NotImplementedError(self.loss_type)
+        model_mean, _, _ = self.q_posterior_mean_variance(x_start=x_recon, x_t=data, t=t)
 
 
         assert model_mean.shape == x_recon.shape == data.shape
@@ -280,19 +333,6 @@ class GaussianDiffusion:
             return model_mean, model_variance, model_log_variance, x_recon
         else:
             return model_mean, model_variance, model_log_variance
-
-    def _predict_xstart_from_eps(self, x_t, t, eps):
-        assert x_t.shape == eps.shape
-        return (
-                self._extract(self.sqrt_recip_alphas_cumprod.to(x_t.device), t, x_t.shape) * x_t -
-                self._extract(self.sqrt_recipm1_alphas_cumprod.to(x_t.device), t, x_t.shape) * eps
-        )
-    
-    def _predict_eps_from_start(self, x_t, t, x0):
-        return (
-            (self._extract(self.sqrt_recip_alphas_cumprod.to(x_t.device), t, x_t.shape) * x_t - x0) / \
-            self._extract(self.sqrt_recipm1_alphas_cumprod.to(x_t.device), t, x_t.shape)
-        )
 
     ''' samples '''
 
@@ -356,6 +396,114 @@ class GaussianDiffusion:
 
         assert imgs[-1].shape == shape
         return imgs
+    
+    ## from https://github.com/lucidrains/denoising-diffusion-pytorch/blob/main/denoising_diffusion_pytorch/denoising_diffusion_pytorch.py
+    @torch.no_grad()
+    def ddim_sample_loop(self, denoise_fn, shape, device, condition, condition_cross, noise_fn=torch.randn, clip_denoised=True, sampling_timesteps=50, ddim_sampling_eta=0., return_all_timesteps = False):
+        self.ddim_sampling_eta = ddim_sampling_eta
+        self.sampling_timesteps = sampling_timesteps
+        batch, total_timesteps, sampling_timesteps, eta = shape[0], self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta
+
+        times = torch.linspace(-1, total_timesteps - 1, steps = sampling_timesteps + 1)   # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
+        times = list(reversed(times.int().tolist()))
+        time_pairs = list(zip(times[:-1], times[1:])) # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
+
+        img = noise_fn(size=shape, dtype=torch.float, device=device) 
+        imgs = [img]
+
+        x_start = None
+
+        for time, time_next in tqdm(time_pairs, desc = 'sampling loop time step'):
+            t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(time)
+    
+            self_cond = x_start if self.self_condition else None
+            pred_noise, x_start, *_ = self.model_predictions(img, t_, condition, condition_cross, self_cond, clip_x_start = True)
+                
+                
+            if time_next < 0:
+                img = x_start
+                imgs.append(img)
+                continue
+
+            alpha = self.alphas_cumprod[time]
+            alpha_next = self.alphas_cumprod[time_next]
+
+            sigma = eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
+            c = (1 - alpha_next - sigma ** 2).sqrt()
+
+            noise = noise_fn(size=shape, dtype=torch.float, device=device)  #torch.randn_like(img)
+
+            img = x_start * alpha_next.sqrt() + \
+                  c * pred_noise + \
+                  sigma * noise
+
+            imgs.append(img)
+
+        ret = img if not return_all_timesteps else imgs
+
+        return ret
+    
+
+    def p_sample_loop_complete(self, denoise_fn, shape, device, condition, condition_cross,
+                      noise_fn=torch.randn, clip_denoised=True, keep_running=False, partial_boxes=None):
+        """
+        Complete samples based on partial samples
+        keep_running: True if we run 2 x num_timesteps, False if we just run num_timesteps
+
+        """
+
+        assert isinstance(shape, (tuple, list))
+        img_t = noise_fn(size=shape, dtype=torch.float, device=device)
+        for t in reversed(range(0, self.num_timesteps if not keep_running else len(self.betas))):
+            t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(t)
+
+            # diffusion clean scenes
+            noise =  noise_fn(size=partial_boxes.shape, dtype=torch.float, device=device)
+            partial_boxes_t = self.q_sample(x_start=partial_boxes, t=t_, noise=noise)
+            num_partial = partial_boxes_t.shape[1]
+
+            # combine noisy version of clean scenes & denoising scenes
+            img_t = torch.cat([ partial_boxes_t, img_t[:, num_partial:, :] ], dim=1).contiguous()
+
+            # reverse diffusion
+            img_t = self.p_sample(denoise_fn=denoise_fn, data=img_t,t=t_, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn,
+                                clip_denoised=clip_denoised, return_pred_xstart=False)
+            if t == 0:
+                print('last:', t, self.num_timesteps, len(self.betas))
+                img_t = torch.cat([ partial_boxes, img_t[:, num_partial:, :] ], dim=1).contiguous()
+
+        assert img_t.shape == shape
+        return img_t
+
+    def p_sample_loop_arrange(self, denoise_fn, shape, device, condition, condition_cross,
+                      noise_fn=torch.randn, clip_denoised=True, keep_running=False, input_boxes=None):
+        """
+        Arrangement: complete other properies based on some propeties
+        keep_running: True if we run 2 x num_timesteps, False if we just run num_timesteps
+
+        """
+
+        assert isinstance(shape, (tuple, list))
+        img_t = noise_fn(size=(shape[0], shape[1], self.translation_dim+self.angle_dim), dtype=torch.float, device=device)
+        for t in reversed(range(0, self.num_timesteps if not keep_running else len(self.betas))):
+            t_ = torch.empty(shape[0], dtype=torch.int64, device=device).fill_(t)
+
+            # reverse diffusion
+            img_t = self.p_sample(denoise_fn=denoise_fn, data=img_t,t=t_, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn,
+                                clip_denoised=clip_denoised, return_pred_xstart=False)
+            if t == 0:
+                print('last:', t, self.num_timesteps, len(self.betas))
+                img_t_trans = img_t[:, :, 0:self.translation_dim]
+                img_t_angle = img_t[:, :, self.translation_dim:] 
+                
+                input_boxes_trans = input_boxes[:, :, 0:self.translation_dim]
+                input_boxes_size  = input_boxes[:, :, self.translation_dim:self.translation_dim+self.size_dim]  
+                input_boxes_angle = input_boxes[:, :, self.translation_dim+self.size_dim:self.bbox_dim] 
+                input_boxes_other = input_boxes[:, :, self.bbox_dim:] 
+                img_t = torch.cat([ img_t_trans, input_boxes_size, img_t_angle, input_boxes_other ], dim=-1).contiguous()
+
+        assert img_t.shape == shape
+        return img_t
 
 
     '''losses'''
@@ -392,6 +540,8 @@ class GaussianDiffusion:
                 target = noise
             elif self.model_mean_type == 'x0':
                 target = data_start
+            elif self.model_mean_type == 'v':
+                target = self._predict_v(data_start, t, noise)
             else:
                 raise NotImplementedError
             # predict the noise instead of x_start. seems to be weighted naturally like SNR
@@ -405,7 +555,21 @@ class GaussianDiffusion:
             assert denoise_out.shape == data_start.shape
             #losses = ((target - denoise_out)**2).mean(dim=list(range(1, len(data_start.shape))))
 
-            if data_start.shape[-1] == self.objectness_dim+self.class_dim+self.bbox_dim+self.objfeat_dim:
+            if self.room_arrange_condition:
+                assert data_start.shape[-1] == self.translation_dim + self.angle_dim
+                loss_trans = ((target[:, :, 0:self.translation_dim]  - denoise_out[:, :, 0:self.translation_dim])**2).mean(dim=list(range(1, len(data_start.shape))))
+                loss_angle = ((target[:, :, self.translation_dim:]  - denoise_out[:, :, self.translation_dim:])**2).mean(dim=list(range(1, len(data_start.shape))))
+                if self.loss_separate:
+                    losses = loss_trans + loss_angle
+                else:
+                    losses = ((target - denoise_out)**2).mean(dim=list(range(1, len(data_start.shape))))
+                losses_weight = losses * self._extract(self.loss_weight.to(losses.device), t, losses.shape).to(losses.device)
+                return losses_weight, {
+                    'loss.trans': loss_trans.mean(),
+                    'loss.angle': loss_angle.mean(),
+                }
+
+            elif data_start.shape[-1] == self.objectness_dim+self.class_dim+self.bbox_dim+self.objfeat_dim:
                 loss_trans = ((target[:, :, 0:self.translation_dim]  - denoise_out[:, :, 0:self.translation_dim])**2).mean(dim=list(range(1, len(data_start.shape))))
                 loss_size  = ((target[:, :, self.translation_dim:self.translation_dim+self.size_dim]  - denoise_out[:, :, self.translation_dim:self.translation_dim+self.size_dim])**2).mean(dim=list(range(1, len(data_start.shape))))
                 loss_angle = ((target[:, :, self.translation_dim+self.size_dim:self.bbox_dim]  - denoise_out[:, :, self.translation_dim+self.size_dim:self.bbox_dim])**2).mean(dim=list(range(1, len(data_start.shape))))
@@ -430,13 +594,20 @@ class GaussianDiffusion:
                         losses += loss_objfeat
                 else:
                     losses = ((target - denoise_out)**2).mean(dim=list(range(1, len(data_start.shape))))
-                    
+                #####
+                losses_weight = losses * self._extract(self.loss_weight.to(losses.device), t, losses.shape)
+
                 if self.loss_iou:
                     # get x_recon & valid mask 
                     if self.model_mean_type == 'eps':
                         x_recon = self._predict_xstart_from_eps(data_t, t, eps=denoise_out)
-                    else:
+                    elif self.model_mean_type == 'x0': 
                         x_recon = denoise_out
+                    elif self.model_mean_type == 'v':
+                        x_recon = self._predict_start_from_v(data_t, t, v=denoise_out)
+                    x_recon = torch.clamp(x_recon, -1.0, 1.0) 
+                    
+                    # get each attribute
                     trans_recon = x_recon[:, :, 0:self.translation_dim]
                     sizes_recon = x_recon[:, :, self.translation_dim:self.translation_dim+self.size_dim]
                     if self.objectness_dim >0:
@@ -445,6 +616,7 @@ class GaussianDiffusion:
                     else:
                         obj_recon = x_recon[:, :, self.bbox_dim+self.class_dim-1:self.bbox_dim+self.class_dim]
                         valid_mask = (obj_recon <=0).float().squeeze(2)
+
                     # descale bounding box to world coordinate system
                     descale_trans = self.descale_to_origin( trans_recon, self._centroids_min.to(data_start.device), self._centroids_max.to(data_start.device) )
                     descale_sizes = self.descale_to_origin( sizes_recon, self._sizes_min.to(data_start.device), self._sizes_max.to(data_start.device) )
@@ -459,15 +631,15 @@ class GaussianDiffusion:
                     # get the iou loss weight w.r.t time
                     w_iou = self._extract(self.alphas_cumprod.to(data_start.device), t, bbox_iou.shape)
                     loss_iou = (w_iou * 0.1 * bbox_iou).mean(dim=list(range(1, len(w_iou.shape))))
-                    loss_iou_valid_avg = (w_iou * 0.5 * bbox_iou_valid).sum( dim=list(range(1, len(bbox_iou_valid.shape))) ) / ( bbox_iou_mask.sum( dim=list(range(1, len(bbox_iou_valid.shape))) ) + 1e-6)
-                    losses += loss_iou_valid_avg
+                    loss_iou_valid_avg = (w_iou * 0.1 * bbox_iou_valid).sum( dim=list(range(1, len(bbox_iou_valid.shape))) ) / ( bbox_iou_mask.sum( dim=list(range(1, len(bbox_iou_valid.shape))) ) + 1e-6)
+                    losses_weight += loss_iou_valid_avg
                 else:
                     loss_iou = torch.zeros(B).to(data_start.device)
                     bbox_iou = torch.zeros(B).to(data_start.device)
                     loss_iou_valid_avg = torch.zeros(B).to(data_start.device)
                     bbox_iou_valid_avg = torch.zeros(B).to(data_start.device)
                     
-                return losses, {
+                return losses_weight, {
                     'loss.bbox': loss_bbox.mean(),
                     'loss.trans': loss_trans.mean(),
                     'loss.size': loss_size.mean(),
@@ -611,3 +783,22 @@ class DiffusionPoint(nn.Module):
         return self.diffusion.p_sample_loop_trajectory(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn, freq=freq,
                                                        clip_denoised=clip_denoised,
                                                        keep_running=keep_running)
+    
+
+    def gen_samples_ddim(self, shape, device, condition=None, condition_cross=None, noise_fn=torch.randn,
+                    clip_denoised=True, sampling_timesteps=50, ddim_sampling_eta=0., return_all_timesteps=False):
+        return self.diffusion.ddim_sample_loop(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn,
+                                            clip_denoised=clip_denoised, sampling_timesteps=sampling_timesteps, ddim_sampling_eta=ddim_sampling_eta, return_all_timesteps=return_all_timesteps)
+    
+    def complete_samples(self, shape, device, condition=None, condition_cross=None, noise_fn=torch.randn,
+                    clip_denoised=True, keep_running=False, partial_boxes=None):
+        return self.diffusion.p_sample_loop_complete(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn,
+                                            clip_denoised=clip_denoised,
+                                            keep_running=keep_running, partial_boxes=partial_boxes)
+
+    def arrange_samples(self, shape, device, condition=None, condition_cross=None, noise_fn=torch.randn,
+                    clip_denoised=True, keep_running=False, input_boxes=None):
+        
+        return self.diffusion.p_sample_loop_arrange(self._denoise, shape=shape, device=device, condition=condition, condition_cross=condition_cross, noise_fn=noise_fn,
+                                            clip_denoised=clip_denoised,
+                                            keep_running=keep_running, input_boxes=input_boxes)

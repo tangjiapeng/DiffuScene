@@ -39,6 +39,7 @@ from utils import render as render_top2down
 from utils import merge_meshes
 import trimesh
 import open3d as o3d
+from utils import merge_meshes,  computer_intersection, computer_symmetry
 
 def categorical_kl(p, q):
     return (p * (np.log(p + 1e-6) - np.log(q + 1e-6))).sum()
@@ -170,14 +171,14 @@ def main(argv):
         help="if retrive most similar objectfeats"
     )
     parser.add_argument(
-        "--combine_size",
-        action="store_true",
-        help="if retrive most similar decoded surfaces"
-    )
-    parser.add_argument(
         "--fix_order",
         action="store_true",
         help="if use fix order"
+    )
+    parser.add_argument(
+        "--compute_intersec",
+        action="store_true",
+        help="if remove the texture"
     )
     args = parser.parse_args(argv)
 
@@ -195,6 +196,17 @@ def main(argv):
         os.makedirs(args.output_directory)
 
     config = load_config(args.config_file)
+
+    ########## make it for evaluation
+    if 'text' in config["data"]["encoding_type"]:
+        if 'textfix' not in config["data"]["encoding_type"]:
+            config["data"]["encoding_type"] = config["data"]["encoding_type"].replace('text', 'textfix')
+
+    if "no_prm" not in config["data"]["encoding_type"]:
+        print('NO PERM AUG in test')
+        config["data"]["encoding_type"] = config["data"]["encoding_type"] + "_no_prm"
+    print('encoding type :', config["data"]["encoding_type"])
+    ####### 
 
     raw_dataset, train_dataset = get_dataset_raw_and_encoded(
         config["data"],
@@ -258,6 +270,25 @@ def main(argv):
             if str(di.scene_id) == args.scene_id:
                 given_scene_id = i
 
+
+    if args.compute_intersec:
+        num_objects_counter = []
+        total_num_symmetry, total_num_pairs = 0, 0
+        NUM_OBJ = AverageAggregator()
+        NUM_PAIRS = AverageAggregator()
+        BOX_IOU = AverageAggregator()
+        BOX_INSEC = AverageAggregator()
+        OVERLAP_RATIO = AverageAggregator()
+
+        num_objects_counter_onlysize = []
+        total_num_symmetry_onlysize, total_num_pairs_onlysize  = 0, 0
+        NUM_OBJ_ONLYSIZE = AverageAggregator()
+        NUM_PAIRS_ONLYSIZE = AverageAggregator()
+        BOX_IOU_ONLYSIZE = AverageAggregator()
+        BOX_INSEC_ONLYSIZE= AverageAggregator()
+        OVERLAP_RATIO_ONLYSIZE = AverageAggregator()
+        
+
     classes = np.array(dataset.class_labels)
     print('class labels:', classes, len(classes))
     for i in range(args.n_sequences):
@@ -279,276 +310,163 @@ def main(argv):
             current_scene, args.path_to_floor_plan_textures, no_texture=args.no_texture
         )
 
-        if not config["validation"]["gen_traj"]:        
-            bbox_params = network.generate_layout(
-                    room_mask=room_mask.to(device),
-                    num_points=config["network"]["sample_num_points"],
-                    point_dim=config["network"]["point_dim"],
-                    text=torch.from_numpy(samples['desc_emb'])[None, :].to(device) if 'desc_emb' in samples.keys() else None,
-                    #text=samples['description'] if 'description' in samples.keys() else None,
-                    device=device,
-                    clip_denoised=args.clip_denoised,
-                    batch_seeds=torch.arange(i, i+1),
-            )
 
-            boxes = dataset.post_process(bbox_params)
-            bbox_params_t = torch.cat([
-                boxes["class_labels"],
-                boxes["translations"],
-                boxes["sizes"],
-                boxes["angles"]
-            ], dim=-1).cpu().numpy()
-            print('Generated bbox:', bbox_params_t.shape)
-
-
-            if args.retrive_objfeats:
-                objfeats = boxes["objfeats"].cpu().numpy()
-                print('shape retrieval based on obj latent feats')
-
-                renderables, trimesh_meshes, model_jids = get_textured_objects_based_on_objfeats(
-                    bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture, query_objfeats=objfeats, combine_size=args.combine_size, 
-                )
-                renderables_onlysize, trimesh_meshes_onlysize, model_jids_onlysize = get_textured_objects(
-                    bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture
-                )
-            else:
-                renderables, trimesh_meshes, model_jids = get_textured_objects(
-                    bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture
-                )
-
-
-            if not args.without_floor:
-                renderables += floor_plan
-                trimesh_meshes += tr_floor
-
-            if args.render_top2down:
-                path_to_image = "{}/{}_{}_{:03d}.png".format(
-                    args.output_directory,
-                    current_scene.scene_id,
-                    scene_idx,
-                    i
-                )
-                render_top2down(
-                    scene_top2down,
-                    renderables,
-                    color=None,
-                    mode="shading",
-                    frame_path=path_to_image,
-                )
-                
-                if args.retrive_objfeats:
-                    # save results of only retrieving sizes
-                    path_to_image_onlysize = "{}/{}".format(
-                        args.output_directory,
-                        "retrive_only_size",
-                    )
-                    if not os.path.exists(path_to_image_onlysize):
-                        os.mkdir(path_to_image_onlysize)
-                    path_to_image_onlysize = "{}/{}/{}_{}_{:03d}.png".format(
-                        args.output_directory,
-                        "retrive_only_size",
-                        current_scene.scene_id,
-                        scene_idx,
-                        i
-                    )
-                    render_top2down(
-                        scene_top2down,
-                        renderables_onlysize,
-                        color=None,
-                        mode="shading",
-                        frame_path=path_to_image_onlysize,
-                    )
-
-            if args.save_mesh:
-                if trimesh_meshes is not None:
-                    # Create a trimesh scene and export it
-                    path_to_objs = os.path.join(
-                        args.output_directory,
-                        "scene_mesh",
-                    )
-                    if not os.path.exists(path_to_objs):
-                        os.mkdir(path_to_objs)
-                    filename = "{}_{}_{:03d}".format(current_scene.scene_id, scene_idx, i)
-                    path_to_scene = os.path.join(path_to_objs, filename+args.mesh_format)
-                    whole_scene_mesh = merge_meshes( trimesh_meshes )
-                    o3d.io.write_triangle_mesh(path_to_scene, whole_scene_mesh)
-
-                if args.retrive_objfeats:
-                    if trimesh_meshes_onlysize is not None:
-                        # Create a trimesh scene and export it
-                        path_to_objs_retrive_onlysize = os.path.join(
-                            args.output_directory,
-                            "scene_mesh_retrive_onlysize",
-                        )
-                        if not os.path.exists(path_to_objs_retrive_onlysize):
-                            os.mkdir(path_to_objs_retrive_onlysize)
-
-                        filename = "{}_{}_{:03d}".format(current_scene.scene_id, scene_idx, i)
-                        path_to_scene_onlysize = os.path.join(path_to_objs_retrive_onlysize, filename+args.mesh_format)
-                        whole_scene_mesh_onlysize = merge_meshes( trimesh_meshes_onlysize )
-                        o3d.io.write_triangle_mesh(path_to_scene_onlysize, whole_scene_mesh_onlysize)
-
-
-            if "description" in samples.keys():
-                path_to_texts = os.path.join(
-                    args.output_directory,
-                    "{}_{}_{:03d}_text.txt".format(current_scene.scene_id, scene_idx, i)
-                )
-                print('the length of samples[description]: {:d}'.format( len(samples['description']) ) )
-                print('text description {}'.format( samples['description']) )
-                open(path_to_texts, 'w').write( ''.join(samples['description']) )
-
-        else:
-            # generate trajectory:
-            bbox_params_traj = network.generate_boxes_progressive(
+        bbox_params = network.generate_layout(
                 room_mask=room_mask.to(device),
                 num_points=config["network"]["sample_num_points"],
                 point_dim=config["network"]["point_dim"],
-                text=samples['description'] if 'description' in samples.keys() else None,
+                #text=torch.from_numpy(samples['desc_emb'])[None, :].to(device) if 'desc_emb' in samples.keys() else None, # glove embedding
+                text=samples['description'] if 'description' in samples.keys() else None,  # bert 
                 device=device,
                 clip_denoised=args.clip_denoised,
                 batch_seeds=torch.arange(i, i+1),
-                ret_traj=True,
-                num_step=config["validation"]["num_step"],
+        )
+
+        boxes = dataset.post_process(bbox_params)
+        bbox_params_t = torch.cat([
+            boxes["class_labels"],
+            boxes["translations"],
+            boxes["sizes"],
+            boxes["angles"]
+        ], dim=-1).cpu().numpy()
+        print('Generated bbox:', bbox_params_t.shape)
+
+
+        if args.retrive_objfeats:
+            objfeats = boxes["objfeats"].cpu().numpy()
+            print('shape retrieval based on obj latent feats')
+
+            renderables, trimesh_meshes, model_jids = get_textured_objects_based_on_objfeats(
+                bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture, query_objfeats=objfeats, 
             )
-            for k_time, v_time in bbox_params_traj.items():
-                print("{} / {} / time {}: Using the {} floor plan of scene {}".format(
-                    i, args.n_sequences, k_time, scene_idx, current_scene.scene_id)
-                )
-                bbox_params = bbox_params_traj[k_time]
-                boxes = dataset.post_process(bbox_params)
-                bbox_params_t = torch.cat([
-                    boxes["class_labels"],
-                    boxes["translations"],
-                    boxes["sizes"],
-                    boxes["angles"]
-                ], dim=-1).cpu().numpy()
-                bbox_params_traj[k_time] = bbox_params_t
-
-                if args.retrive_objfeats:
-                    objfeats = boxes["objfeats"].cpu().numpy()
-                    renderables, trimesh_meshes = get_textured_objects_based_on_objfeats(
-                        bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture,  query_objfeats=objfeats,  combine_size=args.combine_size,
-                    )
-                else:
-                    renderables, trimesh_meshes = get_textured_objects(
-                        bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture
-                    )
-                    
-                if not args.without_floor:
-                    renderables += floor_plan
-                    trimesh_meshes += tr_floor
-
-                if args.render_top2down:
-                    # Do the rendering
-                    path_to_image = "{}/{}_{}_{:03d}_time{:04d}.png".format(
-                        args.output_directory,
-                        current_scene.scene_id,
-                        scene_idx,
-                        i,
-                        k_time
-                    )
-                    render_top2down(
-                        scene_top2down,
-                        renderables,
-                        color=None,
-                        mode="shading",
-                        frame_path=path_to_image,
-                    )
-
-
-                if args.save_mesh:
-                    if trimesh_meshes is not None:
-                        # Create a trimesh scene and export it
-                        path_to_objs = os.path.join(
-                            args.output_directory,
-                            "scene_mesh"
-                        )
-                        if not os.path.exists(path_to_objs):
-                            os.mkdir(path_to_objs)
-                        filename = "{}_{}_{:03d}_time{:d}".format(current_scene.scene_id, scene_idx, i, k_time)
-                        path_to_scene = os.path.join(path_to_objs, filename+args.mesh_format)
-                        whole_scene_mesh = merge_meshes( trimesh_meshes )
-                        o3d.io.write_triangle_mesh(path_to_scene, whole_scene_mesh)
-
-
-        # generate target
-        if config["validation"]["gen_gt"]:
-            samples = dataset[scene_idx]
-
-            print("{} / {} gt: Using the {} floor plan of scene {}".format(
-                i, args.n_sequences, scene_idx, current_scene.scene_id)
+            renderables_onlysize, trimesh_meshes_onlysize, model_jids_onlysize = get_textured_objects(
+                bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture
             )
-            
-            # generate predicted scene objects
-            print("Ground-truth shape:", samples["class_labels"].shape)
-            bbox_params = {
-            "class_labels": torch.from_numpy(samples["class_labels"])[None, :, ...],
-            "translations": torch.from_numpy(samples["translations"])[None, :, ...],
-            "sizes": torch.from_numpy(samples["sizes"])[None, :, ...],
-            "angles": torch.from_numpy(samples["angles"])[None, :, ...],
-            }
-            if config["network"].get("objectness_dim",0) >0:
-                bbox_params["objectness"] = torch.from_numpy(samples["objectness"])[None, :, ...]
-            if config["network"]["objfeat_dim"] >0:
-                if config["network"].get("objfeat_dim", 0) == 32:
-                    bbox_params["objfeats"] = torch.from_numpy(samples["objfeats_32"])[None, :, ...]
-                else:
-                    bbox_params["objfeats"] = torch.from_numpy(samples["objfeats"])[None, :, ...]
-            bbox_params = network.delete_empty_boxes(bbox_params, device=device)
+        else:
+            renderables, trimesh_meshes, model_jids = get_textured_objects(
+                bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture
+            )
 
-            boxes = dataset.post_process(bbox_params)
-            bbox_params_t = torch.cat([
-                boxes["class_labels"],
-                boxes["translations"],
-                boxes["sizes"],
-                boxes["angles"]
-            ], dim=-1).cpu().numpy()
+
+        if not args.without_floor:
+            renderables += floor_plan
+            trimesh_meshes += tr_floor
+
+        if args.render_top2down:
+            path_to_image = "{}/{}_{}_{:03d}.png".format(
+                args.output_directory,
+                current_scene.scene_id,
+                scene_idx,
+                i
+            )
+            render_top2down(
+                scene_top2down,
+                renderables,
+                color=None,
+                mode="shading",
+                frame_path=path_to_image,
+            )
             
             if args.retrive_objfeats:
-                objfeats = boxes["objfeats"].cpu().numpy()
-                renderables, trimesh_meshes = get_textured_objects_based_on_objfeats(
-                    bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture,  query_objfeats=objfeats, combine_size=args.combine_size, 
-                )
-            else:
-                renderables, trimesh_meshes = get_textured_objects(
-                    bbox_params_t, objects_dataset, classes, diffusion=True, no_texture=args.no_texture 
-                )
-            if not args.without_floor:
-                renderables += floor_plan
-                trimesh_meshes += tr_floor
-
-
-            if args.render_top2down:
-                path_to_image = "{}/{}_{}_{:03d}_gt.png".format(
+                # save results of only retrieving sizes
+                path_to_image_onlysize = "{}/{}".format(
                     args.output_directory,
+                    "retrive_only_size",
+                )
+                if not os.path.exists(path_to_image_onlysize):
+                    os.mkdir(path_to_image_onlysize)
+                path_to_image_onlysize = "{}/{}/{}_{}_{:03d}.png".format(
+                    args.output_directory,
+                    "retrive_only_size",
                     current_scene.scene_id,
                     scene_idx,
                     i
                 )
                 render_top2down(
                     scene_top2down,
-                    renderables,
+                    renderables_onlysize,
                     color=None,
                     mode="shading",
-                    frame_path=path_to_image,
+                    frame_path=path_to_image_onlysize,
                 )
 
-            if args.save_mesh:
-                if trimesh_meshes is not None:
-                    # Create a trimesh scene and export it
-                    path_to_objs = os.path.join(
-                        args.output_directory,
-                        "scene_mesh"
-                    )
-                    if not os.path.exists(path_to_objs):
-                        os.mkdir(path_to_objs)
-                    filename = "{}_{}_{:03d}_gt".format(current_scene.scene_id, scene_idx, i)
-                    path_to_scene = os.path.join(path_to_objs, filename+args.mesh_format)
-                    whole_scene_mesh = merge_meshes( trimesh_meshes )
-                    o3d.io.write_triangle_mesh(path_to_scene, whole_scene_mesh)
+            
+            if args.compute_intersec:
+                num_objects, num_pairs, avg_iou, avg_insec, overlap_ratio = computer_intersection(trimesh_meshes)
+                num_objects_counter.append(num_objects)
+                NUM_OBJ.value = num_objects
+                NUM_PAIRS.value = num_pairs
+                BOX_IOU.value = avg_iou
+                BOX_INSEC.value = avg_insec
+                OVERLAP_RATIO.value = overlap_ratio
+                num_symmetries = computer_symmetry(trimesh_meshes, boxes["class_labels"][0, :, :].cpu().numpy(), model_jids)
+                total_num_symmetry += num_symmetries
+                total_num_pairs += num_pairs
+                string = "num scenes: {:d} - num objects avg: {:f} - std: {:f} - num pairs: {:f} - box iou: {:f} - box intersec: {:f} - overlap ratio: {:f} - total num symmetries: {:d} - total num pairs: {:d} retrive objfeats  "\
+                    .format(i+1, NUM_OBJ.value, np.array(num_objects_counter).std(), NUM_PAIRS.value, BOX_IOU.value, BOX_INSEC.value, OVERLAP_RATIO.value, total_num_symmetry, total_num_pairs)
+                print( string )
+                with open( os.path.join(args.output_directory, "iou_states.txt"), 'a') as f:
+                    f.write(string+"\n")
+                f.close()
 
-           
+                if args.retrive_objfeats:
+                    num_objects, num_pairs, avg_iou, avg_insec, overlap_ratio = computer_intersection(trimesh_meshes_onlysize)
+                    num_objects_counter_onlysize.append(num_objects)
+                    NUM_OBJ_ONLYSIZE.value = num_objects
+                    NUM_PAIRS_ONLYSIZE.value = num_pairs
+                    BOX_IOU_ONLYSIZE.value = avg_iou
+                    BOX_INSEC_ONLYSIZE.value = avg_insec
+                    OVERLAP_RATIO_ONLYSIZE.value = overlap_ratio
+
+                    num_symmetries = computer_symmetry(trimesh_meshes_onlysize, boxes["class_labels"][0, :, :].cpu().numpy(), model_jids_onlysize)
+                    total_num_symmetry_onlysize += num_symmetries
+                    total_num_pairs_onlysize += num_pairs
+                    string = "num scenes: {:d} - num objects avg: {:f} - std: {:f} - num pairs: {:f} - box iou: {:f} - box intersec: {:f} - overlap ratio: {:f} - total num symmetries: {:d} - total num pairs: {:d} retrive only size"\
+                    .format(i+1, NUM_OBJ_ONLYSIZE.value, np.array(num_objects_counter_onlysize).std(), NUM_PAIRS_ONLYSIZE.value, BOX_IOU_ONLYSIZE.value, BOX_INSEC_ONLYSIZE.value, OVERLAP_RATIO_ONLYSIZE.value, total_num_symmetry_onlysize, total_num_pairs_onlysize)
+                    print( string )
+                    with open( os.path.join(args.output_directory, "iou_states.txt"), 'a') as f:
+                        f.write(string+"\n")
+                    f.close()
+
+        if args.save_mesh:
+            if trimesh_meshes is not None:
+                # Create a trimesh scene and export it
+                path_to_objs = os.path.join(
+                    args.output_directory,
+                    "scene_mesh",
+                )
+                if not os.path.exists(path_to_objs):
+                    os.mkdir(path_to_objs)
+                filename = "{}_{}_{:03d}".format(current_scene.scene_id, scene_idx, i)
+                path_to_scene = os.path.join(path_to_objs, filename+args.mesh_format)
+                whole_scene_mesh = merge_meshes( trimesh_meshes )
+                o3d.io.write_triangle_mesh(path_to_scene, whole_scene_mesh)
+
+            if args.retrive_objfeats:
+                if trimesh_meshes_onlysize is not None:
+                    # Create a trimesh scene and export it
+                    path_to_objs_retrive_onlysize = os.path.join(
+                        args.output_directory,
+                        "scene_mesh_retrive_onlysize",
+                    )
+                    if not os.path.exists(path_to_objs_retrive_onlysize):
+                        os.mkdir(path_to_objs_retrive_onlysize)
+
+                    filename = "{}_{}_{:03d}".format(current_scene.scene_id, scene_idx, i)
+                    path_to_scene_onlysize = os.path.join(path_to_objs_retrive_onlysize, filename+args.mesh_format)
+                    whole_scene_mesh_onlysize = merge_meshes( trimesh_meshes_onlysize )
+                    o3d.io.write_triangle_mesh(path_to_scene_onlysize, whole_scene_mesh_onlysize)
+
+
+        if "description" in samples.keys():
+            path_to_texts = os.path.join(
+                args.output_directory,
+                "{}_{}_{:03d}_text.txt".format(current_scene.scene_id, scene_idx, i)
+            )
+            print('the length of samples[description]: {:d}'.format( len(samples['description']) ) )
+            print('text description {}'.format( samples['description']) )
+            open(path_to_texts, 'w').write( ''.join(samples['description']) )
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

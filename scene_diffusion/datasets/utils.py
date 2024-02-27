@@ -121,7 +121,7 @@ def parse_threed_front_scenes(
         print()
 
         scenes = sum(scenes, [])
-        pickle.dump(scenes, open("/cluster/jtang/3d_front_processed/threed_front.pkl", "wb")) #/tmp/threed_front.pkl
+        pickle.dump(scenes, open("/cluster/balrog/jtang/3d_front_processed/threed_front.pkl", "wb")) #/tmp/threed_front.pkl
 
     return scenes
 
@@ -193,7 +193,7 @@ def parse_threed_future_models(
             print(s, flush=True, end="\b"*len(s))
         print()
 
-        pickle.dump(furnitures, open("/cluster/jtang/3d_front_processed/threed_future_model.pkl", "wb")) #/tmp/threed_future_model.pkl
+        pickle.dump(furnitures, open("/cluster/balrog/jtang/3d_front_processed/threed_future_model.pkl", "wb")) #/tmp/threed_future_model.pkl
 
     return furnitures
 

@@ -639,7 +639,7 @@ class Add_Text(DatasetDecoratorBase):
         super().__init__(dataset)
         self.eval = eval
         self.max_sentences = max_sentences
-        self.glove = torchtext.vocab.GloVe(name="6B", dim=50, cache='/cluster/jtang/DiffuScene_exps/.vector_cache') 
+        self.glove = torchtext.vocab.GloVe(name="6B", dim=50, cache='/cluster/balrog/jtang/DiffuScene/.vector_cache') 
         self.max_token_length = max_token_length
 
     def __getitem__(self, idx):
