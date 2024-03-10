@@ -28,8 +28,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 import shutil
-from scene_diffusion.datasets.splits_builder import CSVSplitsBuilder
-from scene_diffusion.datasets.threed_front import CachedThreedFront
+from scene_synthesis.datasets.splits_builder import CSVSplitsBuilder
+from scene_synthesis.datasets.threed_front import CachedThreedFront
 import random
 
 class ThreedFrontRenderDataset(object):

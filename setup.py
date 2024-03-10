@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Setup for scene_diffusion"""
+"""Setup for scene_synthesis"""
 from itertools import dropwhile
 from os import path
 from setuptools import find_packages, setup
@@ -19,7 +19,7 @@ def collect_docstring(lines):
 
 def collect_metadata():
     meta = {}
-    with open(path.join("scene_diffusion", "__init__.py")) as f:
+    with open(path.join("scene_synthesis", "__init__.py")) as f:
         lines = iter(f)
         print(lines)
         meta["description"] = collect_docstring(lines)
@@ -55,7 +55,7 @@ def setup_package():
     meta = collect_metadata()
     print('meta', meta)
     setup(
-        name="scene-diffusion",
+        name="scene-synthesis",
         # version=meta["version"],
         # description=meta["description"],
         long_description=long_description,

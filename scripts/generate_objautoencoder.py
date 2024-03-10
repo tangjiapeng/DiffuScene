@@ -13,15 +13,15 @@ from torch.utils.data import DataLoader
 
 from training_utils import id_generator, save_experiment_params, load_config
 
-from scene_diffusion.datasets import get_encoded_dataset, filter_function
-from scene_diffusion.networks import build_network, optimizer_factory, schedule_factory, adjust_learning_rate
-from scene_diffusion.stats_logger import StatsLogger, WandB
+from scene_synthesis.datasets import get_encoded_dataset, filter_function
+from scene_synthesis.networks import build_network, optimizer_factory, schedule_factory, adjust_learning_rate
+from scene_synthesis.stats_logger import StatsLogger, WandB
 
 from utils import yield_forever, load_checkpoints, save_checkpoints
-from scene_diffusion.networks.foldingnet_autoencoder import AutoEncoder, KLAutoEncoder, train_on_batch, validate_on_batch
-from scene_diffusion.datasets.threed_front import ThreedFront
-from scene_diffusion.datasets.threed_future_dataset import ThreedFutureNormPCDataset
-from scene_diffusion.datasets.utils_io import export_pointcloud, load_pointcloud
+from scene_synthesis.networks.foldingnet_autoencoder import AutoEncoder, KLAutoEncoder, train_on_batch, validate_on_batch
+from scene_synthesis.datasets.threed_front import ThreedFront
+from scene_synthesis.datasets.threed_future_dataset import ThreedFutureNormPCDataset
+from scene_synthesis.datasets.utils_io import export_pointcloud, load_pointcloud
 
 def main(argv):
     parser = argparse.ArgumentParser(

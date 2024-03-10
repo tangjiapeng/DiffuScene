@@ -13,12 +13,11 @@ from utils import floor_plan_from_scene, export_scene, get_textured_objects_in_s
     poll_specific_class, make_network_input, render_to_folder, \
     render_scene_from_bbox_params
 
-from scene_diffusion.datasets import filter_function, \
-    get_dataset_raw_and_encoded
-from scene_diffusion.datasets.threed_front import ThreedFront
-from scene_diffusion.datasets.threed_future_dataset import ThreedFutureDataset
-from scene_diffusion.networks import build_network
-from scene_diffusion.utils import get_textured_objects, get_textured_objects_based_on_objfeats
+from scene_synthesis.datasets import filter_function, get_dataset_raw_and_encoded
+from scene_synthesis.datasets.threed_front import ThreedFront
+from scene_synthesis.datasets.threed_future_dataset import ThreedFutureDataset
+from scene_synthesis.networks import build_network
+from scene_synthesis.utils import get_textured_objects, get_textured_objects_based_on_objfeats
 
 from simple_3dviz import Scene
 from simple_3dviz.behaviours.misc import LightToCamera
@@ -26,7 +25,7 @@ from simple_3dviz.behaviours.io import SaveFrames, SaveGif
 from simple_3dviz.utils import render
 from pyrr import Matrix44
 from utils import render as render_top2down
-from scene_diffusion.stats_logger import AverageAggregator
+from scene_synthesis.stats_logger import AverageAggregator
 from utils import merge_meshes,  computer_intersection, computer_symmetry
 import trimesh
 
