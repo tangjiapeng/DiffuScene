@@ -315,9 +315,8 @@ def main(argv):
                 samples["translations"][:, 0:1] = noise_trans[:, 0:1]
                 samples["translations"][:, 2:3] = noise_trans[:, 2:3]
             else:
-                
                 # add random noisy translation for visualization
-                np.random.seed(scene_idx); noise_trans = 0.1 * np.random.randn(num_boxes, 3).astype(np.float32)
+                np.random.seed(scene_idx); noise_trans = np.random.randn(num_boxes, 3).astype(np.float32)
                 samples["translations"] =  samples["translations"] + noise_trans
             # add random noisy size for visualization
             np.random.seed(scene_idx + len(dataset)); noise_angle = np.random.randn(num_boxes, angle_dim).astype(np.float32)

@@ -1,10 +1,10 @@
 # DiffuScene
 
-[**Paper**](https://arxiv.org/abs/2303.14207.pdf) | [**arXiv**](https://arxiv.org/abs/2303.14207.pdf)  | [**Video**](https://www.youtube.com/embed/VkBey2ZHA6E) | [**Project Page**](https://tangjiapeng.github.io/projects/DiffuScene/) <br>
+[**Paper**](https://arxiv.org/abs/2303.14207.pdf) | [**arXiv**](https://arxiv.org/abs/2303.14207.pdf)  | [**Video**](https://www.youtube.com/embed/PFi-03T1lN0) | [**Project Page**](https://tangjiapeng.github.io/projects/DiffuScene/) <br>
 
 This is the repository that contains source code for the paper:
 
-**DiffuScene: Scene Graph Denoising Diffusion Probabilistic Model for Generative Indoor Scene Synthesis**
+**DiffuScene: Denoising Diffusion Models for Generative Indoor Scene Synthesis**
 
 - We present DiffuScene, a diffusion model for diverse and realistic indoor scene synthesis.
 <div style="text-align: center">
@@ -15,23 +15,6 @@ This is the repository that contains source code for the paper:
 <div style="text-align: center">
 <img src="media/teaser.png"  />
 </div>
-
-
-If you find DiffuScene useful for your work please cite:
-
-```
-@inproceedings{
-    tang2023diffuscene,
-    title={DiffuScene: Scene Graph Denoising Diffusion Probabilistic Model for
-      Generative Indoor Scene Synthesis},
-    author={Tang, Jiapeng and Nie Yinyu and Markhasin Lev and Dai Angela and Thies Justus and Nie{\ss}ner, Matthias},
-    booktitle={arxiv},
-    year={2023},
-    }
-```
-
-Contact [Jiapeng Tang](mailto:tangjiapengtjp@gmail.com) for questions, comments and reporting bugs.
-
 
 ## Installation & Dependencies
 You can create a conda environment called ```diffuscene``` using
@@ -140,12 +123,29 @@ python improved_precision_recall.py $ground_truth_diningrooms_top2down_render_fo
 ## Relevant Research
 
 Please also check out the following papers that explore similar ideas:
-- Fast and Flexible Indoor Scene Synthesis via Deep Convolutional Generative Models [pdf](https://arxiv.org/pdf/1811.12463.pdf)
-- Sceneformer: Indoor Scene Generation with Transformers [pdf](https://arxiv.org/pdf/2012.09793.pdf)
-- ATISS: Autoregressive Transformers for Indoor Scene Synthesis [pdf](https://arxiv.org/pdf/2110.03675.pdf)
-- Indoor Scene Generation from a Collection of Semantic-Segmented Depth Images [pdf](https://arxiv.org/abs/2108.09022)
-- Scene Synthesis via Uncertainty-Driven Attribute Synchronization [pdf](https://arxiv.org/abs/2108.13499)
-- LEGO-Net: Learning Regular Rearrangements of Objects in Rooms[pdf](https://arxiv.org/abs/2301.09629)
+- LEGO-Net: Learning Regular Rearrangements of Objects in Rooms.[[homepage]](https://ivl.cs.brown.edu/research/lego-net.html)
+- Learning 3D Scene Priors with 2D Supervision. [[homepage]](https://yinyunie.github.io/sceneprior-page/)
+- Sceneformer: Indoor Scene Generation with Transformers. [[homepage]](https://xinpeng-wang.github.io/sceneformer/)
+- ATISS: Autoregressive Transformers for Indoor Scene Synthesis. [[homepage]](https://research.nvidia.com/labs/toronto-ai/ATISS/)
+- Scene Synthesis via Uncertainty-Driven Attribute Synchronization [[pdf]](https://openaccess.thecvf.com/content/ICCV2021/papers/Yang_Scene_Synthesis_via_Uncertainty-Driven_Attribute_Synchronization_ICCV_2021_paper.pdf)
+- Indoor Scene Generation from a Collection of Semantic-Segmented Depth Images [[pdf]](https://openaccess.thecvf.com/content/ICCV2021/papers/Yang_Indoor_Scene_Generation_From_a_Collection_of_Semantic-Segmented_Depth_Images_ICCV_2021_paper.pdf)
+- Fast and Flexible Indoor Scene Synthesis via Deep Convolutional Generative Models [[pdf]](https://arxiv.org/pdf/1811.12463.pdf)
+
+## Citation
+
+If you find DiffuScene useful for your work please cite:
+
+```
+@inproceedings{tang2024diffuscene,
+  title={Diffuscene: Denoising diffusion models for gerative indoor scene synthesis},
+  author={Tang, Jiapeng and Nie, Yinyu and Markhasin, Lev and Dai, Angela and Thies, Justus and Nie{\ss}ner, Matthias},
+  booktitle={Proceedings of the ieee/cvf conference on computer vision and pattern recognition},
+  year={2024}
+}
+```
+
+Contact [Jiapeng Tang](mailto:tangjiapengtjp@gmail.com) for questions, comments and reporting bugs.
+
 
 ## Acknowledgements
 
