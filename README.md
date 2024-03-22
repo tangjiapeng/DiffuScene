@@ -36,7 +36,7 @@ python setup.py install
 ```
 
 ## Pretrained models
-The pretrained models of DiffuScene Can be downloaded from [here](https://drive.google.com/drive/folders/1EhvyNCAWWto6vMt0vXWMKBoSdYR_9pC2?usp=drive_link).
+The pretrained models of DiffuScene and ShapeAutoEncoder can be downloaded from [here](https://drive.google.com/drive/folders/1EhvyNCAWWto6vMt0vXWMKBoSdYR_9pC2?usp=drive_link).
 
 ## Dataset
 
