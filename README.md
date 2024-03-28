@@ -137,9 +137,9 @@ If you find DiffuScene useful for your work please cite:
 
 ```
 @inproceedings{tang2024diffuscene,
-  title={Diffuscene: Denoising diffusion models for gerative indoor scene synthesis},
+  title={Diffuscene: Denoising diffusion models for generative indoor scene synthesis},
   author={Tang, Jiapeng and Nie, Yinyu and Markhasin, Lev and Dai, Angela and Thies, Justus and Nie{\ss}ner, Matthias},
-  booktitle={Proceedings of the ieee/cvf conference on computer vision and pattern recognition},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
   year={2024}
 }
 ```
