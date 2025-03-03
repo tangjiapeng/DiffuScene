@@ -33,7 +33,9 @@ def get_textured_objects(bbox_params_t, objects_dataset, classes, diffusion=Fals
             class_index = bbox_params_t[0, j, :-7].argmax(-1)
             raw_mesh = Mesh.from_file(furniture.raw_model_path, color=color_palette[class_index, :])
         else:
-            raw_mesh = TexturedMesh.from_file(furniture.raw_model_path)
+            class_index = bbox_params_t[0, j, :-7].argmax(-1)
+            raw_mesh = Mesh.from_file(furniture.raw_model_path, color=color_palette[class_index, :])
+            # raw_mesh = TexturedMesh.from_file(furniture.raw_model_path)
         raw_mesh.scale(furniture.scale)
 
         # Compute the centroid of the vertices in order to match the
@@ -68,6 +70,7 @@ def get_textured_objects(bbox_params_t, objects_dataset, classes, diffusion=Fals
             tr_mesh.visual.material.image = Image.open(furniture.texture_image_path)
             tr_mesh.visual.vertex_colors = (tr_mesh.visual.to_color()).vertex_colors[:, 0:3]
             print('convert texture to vertex colors')
+
         tr_mesh.vertices *= furniture.scale
         tr_mesh.vertices -= centroid
         tr_mesh.vertices[...] = tr_mesh.vertices.dot(R) + translation
@@ -109,7 +112,9 @@ def get_textured_objects_based_on_objfeats(bbox_params_t, objects_dataset, class
             class_index = bbox_params_t[0, j, :-7].argmax(-1)
             raw_mesh = Mesh.from_file(furniture.raw_model_path, color=color_palette[class_index, :])
         else:
-            raw_mesh = TexturedMesh.from_file(furniture.raw_model_path)
+            class_index = bbox_params_t[0, j, :-7].argmax(-1)
+            raw_mesh = Mesh.from_file(furniture.raw_model_path, color=color_palette[class_index, :])
+            # raw_mesh = TexturedMesh.from_file(furniture.raw_model_path)
         
         # instead of using retrieved object scale, we use predicted size
         raw_bbox_vertices = np.load(furniture.path_to_bbox_vertices, mmap_mode="r") #np.array(raw_mesh.bounding_box.vertices)
